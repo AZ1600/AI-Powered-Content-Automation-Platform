@@ -1,0 +1,379 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: One Piece X-only connection platform
+
+Parameters:
+  OAuthCallbackBaseUrl:
+    Type: String
+  XClientId:
+    Type: String
+  XClientSecretSecretName:
+    Type: String
+  XAuthorizeUrl:
+    Type: String
+    Default: https://x.com/i/oauth2/authorize
+  XTokenUrl:
+    Type: String
+    Default: https://api.x.com/2/oauth2/token
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        OAUTH_CALLBACK_BASE_URL: !Ref OAuthCallbackBaseUrl
+        X_CLIENT_ID: !Ref XClientId
+        X_CLIENT_SECRET_SECRET_NAME: !Ref XClientSecretSecretName
+        X_AUTHORIZE_URL: !Ref XAuthorizeUrl
+        X_TOKEN_URL: !Ref XTokenUrl
+        X_STATE_TABLE_NAME: !Ref XStateTable
+        X_CONNECTIONS_TABLE_NAME: !Ref XConnectionsTable
+        X_POSTS_TABLE_NAME: !Ref XPostsTable
+        X_PLANS_TABLE_NAME: !Ref XPlansTable
+        SECRETS_PREFIX: !Sub "${AWS::StackName}/social/x"
+
+Resources:
+  XStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  XConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  XPostsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  XPlansTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  XApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - GET
+          - POST
+
+  XOAuthStartFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_oauth_start.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XStateTable
+      Events:
+        StartXAuth:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /oauth/x/start
+            Method: GET
+
+  XOAuthCallbackFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_oauth_callback.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XConnectionsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+                - secretsmanager:CreateSecret
+                - secretsmanager:PutSecretValue
+              Resource: "*"
+      Events:
+        CallbackXAuth:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /oauth/x/callback
+            Method: GET
+
+  XPublisherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_publisher.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+                - secretsmanager:PutSecretValue
+              Resource: "*"
+        - DynamoDBReadPolicy:
+            TableName: !Ref XConnectionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        PublishXPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/post
+            Method: POST
+
+  XQueueListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_queue_list.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        ListQueuedPosts:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/queue
+            Method: GET
+
+  XQueueRemoveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_queue_remove.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        RemoveQueuedPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/queue/remove
+            Method: POST
+
+  XQueuePublishFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_queue_publish.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+                - secretsmanager:PutSecretValue
+              Resource: "*"
+        - DynamoDBReadPolicy:
+            TableName: !Ref XConnectionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        PublishQueuedPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/queue/publish
+            Method: POST
+
+  XActivityListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_activity_list.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        ListActivity:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/activity
+            Method: GET
+
+  XAccountSummaryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_account_summary.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref XPostsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref XPlansTable
+      Events:
+        GetAccountSummary:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/summary
+            Method: GET
+
+  XQueueSchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_queue_scheduler.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+                - secretsmanager:PutSecretValue
+              Resource: "*"
+        - DynamoDBReadPolicy:
+            TableName: !Ref XConnectionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        ProcessDueQueue:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Enabled: true
+
+  XPlanSaveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_plan_save.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XPlansTable
+      Events:
+        SavePlan:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/plan
+            Method: POST
+
+  XPlanGenerateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_plan_generate.lambda_handler
+      Events:
+        GeneratePlan:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/plan/generate
+            Method: POST
+
+  XPlanListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_plan_list.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref XPlansTable
+      Events:
+        ListPlans:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/plans
+            Method: GET
+
+  XPlanQueueFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_plan_queue.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref XPlansTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref XPostsTable
+      Events:
+        QueuePlan:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/plan/queue
+            Method: POST
+
+  XDashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_dashboard.lambda_handler
+      Events:
+        ShowDashboard:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /dashboard
+            Method: GET
+
+Outputs:
+  XApiBaseUrl:
+    Value: !Sub "https://${XApi}.execute-api.${AWS::Region}.amazonaws.com"
+  XStateTableName:
+    Value: !Ref XStateTable
+  XConnectionsTableName:
+    Value: !Ref XConnectionsTable
+  XPostsTableName:
+    Value: !Ref XPostsTable
+  XPlansTableName:
+    Value: !Ref XPlansTable
