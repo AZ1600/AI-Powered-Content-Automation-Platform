@@ -110,27 +110,11 @@ High-level dashboard view showing connected accounts, queued work, saved plans, 
 
 ---
 
-### Queue Management Workflow
-
-Queued-post management interface showing scheduled content, slot metadata, publish controls, and removal actions.
-
-![Queue Management Workflow](docs/screenshots/queue-management.png)
-
----
-
 ### Daily Plan Library
 
 Saved plan view showing structured post batches by account, date, slot, and content type.
 
 ![Daily Plan Library](docs/screenshots/plan-library.png)
-
----
-
-### Recent Activity Feed
-
-Operational activity feed showing published and failed posts for monitoring workflow outcomes.
-
-![Recent Activity Feed](docs/screenshots/recent-activity.png)
 
 ---
 
@@ -144,9 +128,49 @@ End-to-end proof that queued and scheduled posts were successfully published to 
 
 ### Multi-Account Connection Flow
 
-OAuth-connected X accounts managed through a single platform workflow.
+Multi-account workflow managed through a single operations platform.
 
-![Multi-Account Connection Flow](docs/screenshots/multi-account-connection.png)
+![Multi-Account Connection Flow](docs/screenshots/dashboard-overview.png)
+
+---
+
+### OAuth-connected
+
+Successful OAuth connection response confirming that X accounts were securely linked to the platform workflow.
+
+![OAuth-connected](docs/screenshots/multi-account-connection.png)
+
+---
+
+### Publishing Activity Feed
+
+Operational activity feed showing published and failed posts for monitoring workflow outcomes.
+
+![Publishing Activity Feed](docs/screenshots/recent-activity.png)
+
+---
+
+### Queue Management Workflow
+
+Queued-post management interface showing scheduled content, slot metadata, publish controls, and removal actions.
+
+![Queue Management Workflow](docs/screenshots/queue-management.png)
+
+---
+
+### Xpost from account 1
+
+Example live posts published for the first connected X account through the platform workflow.
+
+![Xpost from account 1](docs/screenshots/xpost-account-1.png)
+
+---
+
+### Xpost from account 2
+
+Example live posts published for the second connected X account through the platform workflow.
+
+![Xpost from account 2](docs/screenshots/xpost-account-2.png)
 
 ---
 
