@@ -330,6 +330,6 @@ This project shows how platform engineering ideas can be applied to content oper
 
 **Olawale Azeez**
 
-Cloud Engineer | Platform Engineer | AWS Solutions Architect
+Cloud Engineer | Platform Engineer | AWS Certified Developer
 
 Focused on Platform Engineering, AWS, automation, operational systems, and workflow design.
