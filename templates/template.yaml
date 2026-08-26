@@ -5,9 +5,9 @@ Description: One Piece X-only connection platform
 Parameters:
   OAuthCallbackBaseUrl:
     Type: String
+    Default: https://example.com
+    Description: Public API base URL used for the X OAuth callback after the initial deployment.
   XClientId:
-    Type: String
-  XClientSecretSecretName:
     Type: String
   XAuthorizeUrl:
     Type: String
@@ -19,20 +19,23 @@ Parameters:
 Globals:
   Function:
     Runtime: python3.12
-    Timeout: 60
-    MemorySize: 512
-    Tracing: Active
+    Timeout: 30
+    MemorySize: 256
+    Tracing: PassThrough
     Environment:
       Variables:
+        # Set to the deployed API URL in the second deployment step.
         OAUTH_CALLBACK_BASE_URL: !Ref OAuthCallbackBaseUrl
         X_CLIENT_ID: !Ref XClientId
-        X_CLIENT_SECRET_SECRET_NAME: !Ref XClientSecretSecretName
+        X_CLIENT_SECRET_SECRET_NAME: !Ref XClientSecret
+        AUTOMATION_API_KEY_SECRET_ARN: !Ref AutomationApiKey
         X_AUTHORIZE_URL: !Ref XAuthorizeUrl
         X_TOKEN_URL: !Ref XTokenUrl
         X_STATE_TABLE_NAME: !Ref XStateTable
         X_CONNECTIONS_TABLE_NAME: !Ref XConnectionsTable
         X_POSTS_TABLE_NAME: !Ref XPostsTable
         X_PLANS_TABLE_NAME: !Ref XPlansTable
+        X_MEDIA_BUCKET_NAME: !Ref XMediaBucket
         SECRETS_PREFIX: !Sub "${AWS::StackName}/social/x"
 
 Resources:
@@ -73,6 +76,9 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S
@@ -88,6 +94,9 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S
@@ -98,6 +107,34 @@ Resources:
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
+
+  XMediaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireUploadedMedia
+            Status: Enabled
+            ExpirationInDays: 30
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: [Content-Type]
+            AllowedMethods: [PUT]
+            # CORS only permits browser PUTs; bucket policy still blocks public reads.
+            AllowedOrigins: ["*"]
+            MaxAge: 300
 
   XApi:
     Type: AWS::Serverless::HttpApi
@@ -111,6 +148,21 @@ Resources:
         AllowMethods:
           - GET
           - POST
+
+  XClientSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/social/x/client-secret"
+      Description: X OAuth client secret. Set the value after the first deployment.
+
+  AutomationApiKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/automation/api-key"
+      Description: Shared key required for automated plan and publishing writes.
+      GenerateSecretString:
+        PasswordLength: 40
+        ExcludePunctuation: true
 
   XOAuthStartFunction:
     Type: AWS::Serverless::Function
@@ -161,6 +213,10 @@ Resources:
       Policies:
         - Statement:
             - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AutomationApiKey
+        - Statement:
+            - Effect: Allow
               Action:
                 - secretsmanager:GetSecretValue
                 - secretsmanager:PutSecretValue
@@ -169,12 +225,38 @@ Resources:
             TableName: !Ref XConnectionsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref XPostsTable
+        - Statement:
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub "${XMediaBucket.Arn}/uploads/*"
       Events:
         PublishXPost:
           Type: HttpApi
           Properties:
             ApiId: !Ref XApi
             Path: /x/post
+            Method: POST
+
+  XMediaPresignFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../lambdas
+      Handler: x_media_presign.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${XMediaBucket.Arn}/uploads/*"
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AutomationApiKey
+      Events:
+        CreateMediaUpload:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref XApi
+            Path: /x/media/presign
             Method: POST
 
   XQueueListFunction:
@@ -199,6 +281,10 @@ Resources:
       CodeUri: ../lambdas
       Handler: x_queue_remove.lambda_handler
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AutomationApiKey
         - DynamoDBCrudPolicy:
             TableName: !Ref XPostsTable
       Events:
@@ -215,6 +301,10 @@ Resources:
       CodeUri: ../lambdas
       Handler: x_queue_publish.lambda_handler
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AutomationApiKey
         - Statement:
             - Effect: Allow
               Action:
@@ -284,11 +374,86 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref XPostsTable
       Events:
-        ProcessDueQueue:
-          Type: Schedule
+        Account1Morning:
+          Type: ScheduleV2
           Properties:
-            Schedule: rate(15 minutes)
-            Enabled: true
+            ScheduleExpression: cron(30 8 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account1"}'
+        Account1LateMorning:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 11 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account1"}'
+        Account1Afternoon:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 14 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account1"}'
+        Account1Evening:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 17 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account1"}'
+        Account1Night:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 20 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account1"}'
+        Account2Morning:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 9 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account2"}'
+        Account2Midday:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 12 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account2"}'
+        Account2Afternoon:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 15 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account2"}'
+        Account2Evening:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 18 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account2"}'
+        Account2Night:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(30 21 * * ? *)
+            ScheduleExpressionTimezone: Europe/London
+            FlexibleTimeWindow:
+              Mode: "OFF"
+            Input: '{"account_id":"account2"}'
 
   XPlanSaveFunction:
     Type: AWS::Serverless::Function
@@ -296,6 +461,10 @@ Resources:
       CodeUri: ../lambdas
       Handler: x_plan_save.lambda_handler
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AutomationApiKey
         - DynamoDBCrudPolicy:
             TableName: !Ref XPlansTable
       Events:
@@ -341,6 +510,10 @@ Resources:
       CodeUri: ../lambdas
       Handler: x_plan_queue.lambda_handler
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AutomationApiKey
         - DynamoDBReadPolicy:
             TableName: !Ref XPlansTable
         - DynamoDBCrudPolicy:
@@ -377,3 +550,5 @@ Outputs:
     Value: !Ref XPostsTable
   XPlansTableName:
     Value: !Ref XPlansTable
+  AutomationApiKeySecretArn:
+    Value: !Ref AutomationApiKey

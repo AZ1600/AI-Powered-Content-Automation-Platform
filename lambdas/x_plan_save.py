@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from common import response, utc_now
+from common import require_automation_key, response, utc_now
 
 try:
     import boto3
@@ -27,13 +28,19 @@ def _parse_event_body(event) -> dict:
     return json.loads(raw_body)
 
 
+def _expiry_epoch(days: int) -> int:
+    return int((datetime.now(timezone.utc) + timedelta(days=days)).timestamp())
+
+
 def lambda_handler(event, _context):
     try:
+        require_automation_key(event)
         body = _parse_event_body(event)
         account_id = body.get("account_id", "").strip()
         plan_date = body.get("plan_date", "").strip()
         posts = body.get("posts", [])
         notes = body.get("notes", "").strip()
+        world_radar = body.get("world_radar", [])
 
         if not account_id:
             return response(400, {"provider": "x", "error": "Missing account_id"})
@@ -41,6 +48,8 @@ def lambda_handler(event, _context):
             return response(400, {"provider": "x", "error": "Missing plan_date"})
         if not isinstance(posts, list) or not posts:
             return response(400, {"provider": "x", "error": "posts must be a non-empty list"})
+        if not isinstance(world_radar, list):
+            return response(400, {"provider": "x", "error": "world_radar must be a list"})
 
         table = _plans_table()
         if table is None:
@@ -55,7 +64,10 @@ def lambda_handler(event, _context):
             "plan_date": plan_date,
             "posts": posts,
             "notes": notes,
+            "world_radar": world_radar,
             "saved_at": utc_now(),
+            # Plans are operational input, not an indefinitely growing archive.
+            "expires_at": _expiry_epoch(90),
         }
         table.put_item(Item=item)
 
@@ -71,5 +83,7 @@ def lambda_handler(event, _context):
                 "saved_at": item["saved_at"],
             },
         )
+    except PermissionError as exc:
+        return response(401, {"provider": "x", "status": "unauthorized", "error": str(exc)})
     except Exception as exc:
         return response(502, {"provider": "x", "status": "plan_save_failed", "error": str(exc)})

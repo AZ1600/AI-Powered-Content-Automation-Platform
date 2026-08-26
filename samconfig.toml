@@ -9,11 +9,11 @@ stack_name = "one-piece-x-platform"
 resolve_s3 = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
-region = "us-east-1"
-parameter_overrides = [
-  "OAuthCallbackBaseUrl=https://example.com",
-  "XClientId=YOUR_X_CLIENT_ID",
-  "XClientSecretSecretName=YOUR_SECRETS_MANAGER_SECRET_NAME",
-  "XAuthorizeUrl=https://x.com/i/oauth2/authorize",
-  "XTokenUrl=https://api.x.com/2/oauth2/token"
-]
+region = "eu-west-2"
+parameter_overrides = "OAuthCallbackBaseUrl=\"https://mm90kg6mh7.execute-api.eu-west-2.amazonaws.com\" XClientId=\"SU5iNjluV2FtTDF2dWRMaVdwWk46MTpjaQ\" XAuthorizeUrl=\"https://x.com/i/oauth2/authorize\" XTokenUrl=\"https://api.x.com/2/oauth2/token\""
+s3_prefix = "one-piece-x-platform"
+profile = "one-piece-new"
+image_repositories = []
+
+[default.global.parameters]
+region = "eu-west-2"

@@ -11,7 +11,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from common import response, utc_now
+from common import require_automation_key, response, utc_now
 
 try:
     import boto3
@@ -22,6 +22,7 @@ except ImportError:  # pragma: no cover
 
 RETRY_COOLDOWN_MINUTES = 10
 MAX_RETRY_COUNT = 3
+POST_RETENTION_DAYS = 180
 
 
 def _connections_table():
@@ -38,6 +39,12 @@ def _posts_table():
     if boto3 is None:
         return None
     return boto3.resource("dynamodb").Table(os.environ["X_POSTS_TABLE_NAME"])
+
+
+def _media_bucket():
+    if boto3 is None:
+        return None
+    return boto3.client("s3")
 
 
 def _parse_event_body(event) -> dict:
@@ -58,6 +65,10 @@ def _parse_iso8601(value: str) -> datetime | None:
         return dt.astimezone(timezone.utc)
     except ValueError:
         return None
+
+
+def _expiry_epoch(days: int) -> int:
+    return int((datetime.now(timezone.utc) + timedelta(days=days)).timestamp())
 
 
 def _list_account_posts(account_id: str) -> list[dict]:
@@ -218,6 +229,8 @@ def _queue_post(
     publish_mode: str = "manual",
     auto_approved: bool = False,
     approval_source: str = "",
+    media_key: str = "",
+    media_type: str = "",
 ) -> dict:
     table = _posts_table()
     if table is None:
@@ -251,16 +264,47 @@ def _queue_post(
         "publish_mode": publish_mode,
         "auto_approved": auto_approved,
         "approval_source": approval_source,
+        "media_key": media_key,
+        "media_type": media_type,
         "retry_count": 0,
+        # Retain enough history for practical performance review, then let DynamoDB TTL remove it.
+        "expires_at": _expiry_epoch(POST_RETENTION_DAYS),
     }
     table.put_item(Item=item)
     return item
 
 
-def _publish_post(access_token: str, text: str, reply_to: str = "") -> dict:
+def _upload_image(access_token: str, media_key: str, media_type: str) -> str:
+    if not media_key.startswith("uploads/") or media_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise RuntimeError("Unsupported media attachment")
+    client = _media_bucket()
+    if client is None:
+        raise RuntimeError("S3 client unavailable")
+    image = client.get_object(Bucket=os.environ["X_MEDIA_BUCKET_NAME"], Key=media_key)["Body"].read()
+    if len(image) > 5 * 1024 * 1024:
+        raise RuntimeError("Image exceeds the 5 MB upload limit")
+    request = Request(
+        "https://api.x.com/2/media/upload",
+        data=json.dumps({"media": base64.b64encode(image).decode("ascii"), "media_category": "tweet_image", "media_type": media_type}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {access_token}"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as handle:
+            media_id = json.loads(handle.read().decode("utf-8")).get("data", {}).get("id", "")
+    except HTTPError as exc:
+        raise RuntimeError(f"X image upload failed: {exc.code} {exc.read().decode('utf-8', errors='replace')}") from exc
+    if not media_id:
+        raise RuntimeError("X image upload did not return a media ID")
+    return media_id
+
+
+def _publish_post(access_token: str, text: str, reply_to: str = "", media_key: str = "", media_type: str = "") -> dict:
     payload = {"text": text}
     if reply_to:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to}
+    if media_key:
+        payload["media"] = {"media_ids": [_upload_image(access_token, media_key, media_type)]}
 
     request = Request(
         "https://api.x.com/2/tweets",
@@ -363,7 +407,7 @@ def publish_queued_post(account_id: str, post_id: str, approved: bool) -> dict:
         raise RuntimeError(f"No access token saved for {account_id}")
 
     try:
-        publish_result = _publish_post(access_token, str(item.get("text", "")), str(item.get("reply_to", "")))
+        publish_result = _publish_post(access_token, str(item.get("text", "")), str(item.get("reply_to", "")), str(item.get("media_key", "")), str(item.get("media_type", "")))
         tweet_id = publish_result.get("data", {}).get("id", "")
         print(
             json.dumps(
@@ -399,7 +443,7 @@ def publish_queued_post(account_id: str, post_id: str, approved: bool) -> dict:
             access_token = tokens.get("access_token", "")
             if access_token:
                 try:
-                    publish_result = _publish_post(access_token, str(item.get("text", "")), str(item.get("reply_to", "")))
+                    publish_result = _publish_post(access_token, str(item.get("text", "")), str(item.get("reply_to", "")), str(item.get("media_key", "")), str(item.get("media_type", "")))
                     tweet_id = publish_result.get("data", {}).get("id", "")
                     _update_post_item(
                         account_id,
@@ -455,6 +499,7 @@ def publish_queued_post(account_id: str, post_id: str, approved: bool) -> dict:
 
 def lambda_handler(event, _context):
     try:
+        require_automation_key(event)
         body = _parse_event_body(event)
         account_id = body.get("account_id", "").strip()
         text = body.get("text", "").strip()
@@ -462,6 +507,8 @@ def lambda_handler(event, _context):
         queue_only = bool(body.get("queue_only"))
         approved = bool(body.get("approved"))
         scheduled_for = body.get("scheduled_for", "").strip()
+        media_key = body.get("media_key", "").strip()
+        media_type = body.get("media_type", "").strip()
 
         if not account_id:
             return response(400, {"provider": "x", "error": "Missing account_id"})
@@ -478,6 +525,8 @@ def lambda_handler(event, _context):
                 publish_mode="manual",
                 auto_approved=False,
                 approval_source="",
+                media_key=media_key,
+                media_type=media_type,
             )
             if queued_item.get("duplicate"):
                 return response(
@@ -509,7 +558,7 @@ def lambda_handler(event, _context):
             return response(400, {"provider": "x", "error": f"No access token saved for {account_id}"})
 
         try:
-            publish_result = _publish_post(access_token, text, reply_to)
+            publish_result = _publish_post(access_token, text, reply_to, media_key, media_type)
             tweet_id = publish_result.get("data", {}).get("id", "")
             return response(
                 200,
@@ -528,7 +577,7 @@ def lambda_handler(event, _context):
                 access_token = tokens.get("access_token", "")
                 if access_token:
                     try:
-                        publish_result = _publish_post(access_token, text, reply_to)
+                        publish_result = _publish_post(access_token, text, reply_to, media_key, media_type)
                         tweet_id = publish_result.get("data", {}).get("id", "")
                         return response(
                             200,
@@ -567,6 +616,8 @@ def lambda_handler(event, _context):
                     },
                 )
             raise
+    except PermissionError as exc:
+        return response(401, {"provider": "x", "status": "unauthorized", "error": str(exc)})
     except Exception as exc:
         return response(
             502,
