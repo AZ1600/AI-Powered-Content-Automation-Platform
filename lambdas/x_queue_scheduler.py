@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from common import response
 from x_publisher import _list_account_posts, _parse_iso8601, publish_queued_post
 
-ACCOUNT_IDS = ["account1", "account2"]
+ACCOUNT_IDS = {"account1", "account2"}
 
 
 def _is_scheduler_approved(item: dict) -> bool:
@@ -25,18 +25,20 @@ def _is_due(item: dict) -> bool:
     return scheduled_for <= datetime.now(timezone.utc)
 
 
-def lambda_handler(_event, _context):
+def lambda_handler(event, _context):
     try:
+        account_id = str(event.get("account_id", "")).strip()
+        account_ids = [account_id] if account_id in ACCOUNT_IDS else sorted(ACCOUNT_IDS)
         processed = []
         skipped = []
-        for account_id in ACCOUNT_IDS:
-            for item in _list_account_posts(account_id):
+        for scheduled_account_id in account_ids:
+            for item in _list_account_posts(scheduled_account_id):
                 if item.get("status") != "queued":
                     continue
                 if not _is_scheduler_approved(item):
                     skipped.append(
                         {
-                            "account_id": account_id,
+                            "account_id": scheduled_account_id,
                             "post_id": item.get("post_id", ""),
                             "status": "manual_or_unapproved",
                         }
@@ -44,10 +46,10 @@ def lambda_handler(_event, _context):
                     continue
                 if not _is_due(item):
                     continue
-                result = publish_queued_post(account_id, str(item.get("post_id", "")), approved=True)
+                result = publish_queued_post(scheduled_account_id, str(item.get("post_id", "")), approved=True)
                 processed.append(
                     {
-                        "account_id": account_id,
+                        "account_id": scheduled_account_id,
                         "post_id": item.get("post_id", ""),
                         "status": result.get("status", "unknown"),
                     }

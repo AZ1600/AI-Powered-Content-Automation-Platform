@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import hashlib
 import json
 import os
@@ -11,6 +12,11 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
+
+try:
+    import boto3
+except ImportError:  # pragma: no cover
+    boto3 = None
 
 
 def env(name: str) -> str:
@@ -94,3 +100,16 @@ def build_authorize_url(state: str, code_challenge: str) -> str:
         "code_challenge_method": "S256",
     }
     return f"{env('X_AUTHORIZE_URL')}?{urlencode(params)}"
+
+
+def require_automation_key(event: dict[str, Any]) -> None:
+    """Reject write requests that do not originate from the configured automation."""
+    headers = event.get("headers") or {}
+    supplied = str(headers.get("x-automation-key") or headers.get("X-Automation-Key") or "")
+    secret_arn = os.environ.get("AUTOMATION_API_KEY_SECRET_ARN", "").strip()
+    if not supplied or not secret_arn or boto3 is None:
+        raise PermissionError("Automation API key is required")
+
+    expected = boto3.client("secretsmanager").get_secret_value(SecretId=secret_arn)["SecretString"]
+    if not hmac.compare_digest(supplied, expected):
+        raise PermissionError("Automation API key is invalid")

@@ -1,0 +1,14 @@
+version = 1
+id = "one-piece-x-growth"
+kind = "cron"
+name = "One Piece X Growth"
+status = "PAUSED"
+rrule = "FREQ=DAILY;BYHOUR=6;BYMINUTE=30"
+timezone = "Europe/London"
+cwd = "/ABSOLUTE/PATH/TO/YOUR/CONTENT-PLANS"
+prompt = """
+Generate the daily One Piece X content plan for account1 (manga/spoilers) and account2 (anime-safe) using current franchise developments and fan discussion. Write dated Markdown and JSON artifacts matching the bridge schema. After validating the JSON, run `python3 /ABSOLUTE/PATH/TO/one_piece_x_platform_client.py --plan-file <dated-json-plan>` with ONE_PIECE_X_PLATFORM_BASE_URL set to the new AWS API. Report plan, queue, and publishing-status failures clearly. Do not create or queue posts for account3 until it is connected.
+"""
+
+# Activate only after deployment, X OAuth is complete for both accounts, and
+# ONE_PIECE_X_PLATFORM_BASE_URL points to the new stack output.

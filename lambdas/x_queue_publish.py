@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from common import response
+from common import require_automation_key, response
 from x_publisher import publish_queued_post
 
 
@@ -17,6 +17,7 @@ def _parse_event_body(event) -> dict:
 
 def lambda_handler(event, _context):
     try:
+        require_automation_key(event)
         body = _parse_event_body(event)
         account_id = body.get("account_id", "").strip()
         post_id = body.get("post_id", "").strip()
@@ -31,6 +32,8 @@ def lambda_handler(event, _context):
         print(json.dumps({"event": "queue_publish_result", "account_id": account_id, "post_id": post_id, "result": result}))
         status_code = 200 if result.get("status") not in {"approval_required"} else 400
         return response(status_code, result)
+    except PermissionError as exc:
+        return response(401, {"provider": "x", "status": "unauthorized", "error": str(exc)})
     except Exception as exc:
         print(json.dumps({"event": "queue_publish_exception", "error": str(exc)}))
         return response(502, {"provider": "x", "status": "queue_publish_failed", "error": str(exc)})

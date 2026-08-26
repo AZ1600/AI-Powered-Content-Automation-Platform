@@ -1,335 +1,161 @@
-# AI-Powered Content Automation Platform
+# One Piece X Content Automation Platform
 
-## Overview
+A low-cost serverless control center for two One Piece X accounts:
 
-Serverless social content automation platform built on AWS to manage daily publishing workflows across multiple X accounts.
+- `account1`: manga-first reactions, theories, and clearly labelled spoilers.
+- `account2`: anime-safe episode, trailer, movie, and adaptation discussion.
 
-The platform centralizes account connection, content planning, queued draft management, scheduled publishing, manual publish controls, and recent activity tracking through a browser-based control panel.
+The platform stores plans, queues approved posts at Europe/London posting times, publishes through X OAuth, and exposes a browser dashboard for review and manual control.
 
-This project demonstrates practical platform engineering for creator operations by turning repetitive social publishing work into a structured, repeatable system with secure integrations and operational visibility.
+## What It Does
 
----
-
-## Portfolio Description
-
-Designed and built a serverless social content automation platform on AWS to manage multi-account X publishing workflows. Implemented secure OAuth account connection, structured daily content planning, draft queue management, scheduled auto-publishing, manual publish controls, and activity tracking through a custom browser dashboard.
-
-Built the platform using AWS Lambda, API Gateway, DynamoDB, EventBridge, AWS Secrets Manager, and AWS SAM. The system supports queue-based publishing operations, publish-state tracking, secure token handling, and repeatable content workflows that reduce manual effort and improve operational consistency.
-
----
-
-## Key Features
-
-* Multi-account X workflow management
-* Secure OAuth account connection
-* Daily content plan storage
-* Queue-based draft and scheduled publishing
-* Manual publish and remove controls
-* Scheduled auto-publish using EventBridge
-* Publish-state tracking across queued, published, failed, and removed posts
-* Browser dashboard for operations
-* DynamoDB-backed queue, plan, and activity data
-* Secrets Manager-based credential and token storage
-
----
+- OAuth 2.0 PKCE connection flow for two X accounts.
+- Private token storage in AWS Secrets Manager.
+- Daily plan storage, review, and queueing.
+- Ten timezone-aware AWS Scheduler posting windows per day.
+- Live dashboard for account health, plans, queue, publishing activity, and manual drafts.
+- Protected write endpoints using an automation API key.
+- **World Radar**: sourced official news and clearly labelled fan-conversation signals stored with each plan.
+- Secure image attachments: JPEG, PNG, and WebP up to 5 MB, stored privately in S3 and attached to X at publish time.
 
 ## Architecture
 
 ```text
-                    Operator / Creator
-                           │
-                           ▼
+Codex daily automation
+  -> sourced plan JSON + World Radar
+  -> bridge client
+  -> API Gateway + Lambda
+  -> DynamoDB plans / queue / activity
+  -> AWS Scheduler
+  -> X API publishing
 
-                Browser Control Panel
-                           │
-
-      ┌────────────────────┼────────────────────┐
-      ▼                    ▼                    ▼
-
-   Daily Plans         Draft Queue         Activity Feed
-
-      ▼                    ▼                    ▼
-
-  Plan Storage       Scheduled Posts      Publish Results
-
-                           │
-                           ▼
-
-                 AWS Lambda Service Layer
-                           │
-
-      ┌────────────────────┼────────────────────┬───────────────────┐
-      ▼                    ▼                    ▼                   ▼
-
-   API Gateway         DynamoDB         Secrets Manager        EventBridge
-                                                                  │
-                                                                  ▼
-                                                                 X API
+Dashboard browser
+  -> API Gateway
+  -> private S3 image upload URL
+  -> queued X post with media attachment
 ```
 
----
+The stack uses API Gateway HTTP API, Lambda, DynamoDB on-demand, EventBridge Scheduler, Secrets Manager, and a private S3 media bucket. It does not require a server, database instance, NAT Gateway, or provisioned concurrency.
 
-## Platform Engineering Concepts
-
-This project demonstrates:
-
-* Event-driven serverless design
-* Self-service workflow automation
-* Operational visibility for content systems
-* Queue-based workload orchestration
-* Secure external API integration
-* Lightweight governance for publishing workflows
-* Standardized scheduling and execution
-* Platform-style tooling for repeatable operations
-
----
-
-## Technologies Used
-
-* AWS Lambda
-* Amazon API Gateway
-* Amazon DynamoDB
-* Amazon EventBridge
-* AWS Secrets Manager
-* AWS SAM
-* Python
-* X API
-* HTML
-* CSS
-* JavaScript
-
----
-
-## Screenshots
-
-### Control Panel Overview
-
-High-level dashboard view showing connected accounts, queued work, saved plans, published content, and failed posts from a single operations interface.
-
-![Control Panel Overview](docs/screenshots/dashboard-overview.png)
-
----
-
-### Daily Plan Library
-
-Saved plan view showing structured post batches by account, date, slot, and content type.
-
-![Daily Plan Library](docs/screenshots/plan-library.png)
-
----
-
-### Live Published Posts on X
-
-End-to-end proof that queued and scheduled posts were successfully published to the live X accounts.
-
-![Live Published Posts on X](docs/screenshots/live-posts-on-x.png)
-
----
-
-### Multi-Account Connection Flow
-
-Multi-account workflow managed through a single operations platform.
-
-![Multi-Account Connection Flow](docs/screenshots/dashboard-overview.png)
-
----
-
-### OAuth-connected
-
-Successful OAuth connection response confirming that X accounts were securely linked to the platform workflow.
-
-![OAuth-connected](docs/screenshots/multi-account-connection.png)
-
----
-
-### Publishing Activity Feed
-
-Operational activity feed showing published and failed posts for monitoring workflow outcomes.
-
-![Publishing Activity Feed](docs/screenshots/recent-activity.png)
-
----
-
-### Queue Management Workflow
-
-Queued-post management interface showing scheduled content, slot metadata, publish controls, and removal actions.
-
-![Queue Management Workflow](docs/screenshots/queue-management.png)
-
----
-
-### Xpost from account 1
-
-Example live posts published for the first connected X account through the platform workflow.
-
-![Xpost from account 1](docs/screenshots/xpost-account-1.png)
-
----
-
-### Xpost from account 2
-
-Example live posts published for the second connected X account through the platform workflow.
-
-![Xpost from account 2](docs/screenshots/xpost-account-2.png)
-
----
-
-## Skills Demonstrated
-
-### Platform Engineering
-
-* Serverless platform design
-* Workflow automation design
-* Operational dashboard development
-* Queue and scheduler architecture
-* Publishing governance and control patterns
-
-### Cloud & Automation
-
-* Lambda-based API implementation
-* EventBridge scheduling
-* DynamoDB data modeling
-* Secrets and token management
-* Infrastructure as code with AWS SAM
-
-### Product & Operations
-
-* Multi-account content operations
-* Publishing queue lifecycle management
-* Scheduled and manual release workflows
-* Activity and outcome tracking
-* Lightweight operator experience design
-
----
-
-## Project Outcomes
-
-This project demonstrates the ability to:
-
-* Build a focused internal operations platform
-* Replace manual social posting with structured workflows
-* Coordinate multiple connected social accounts from one interface
-* Implement scheduled and manual publishing safely
-* Track operational outcomes across publish states
-* Create a repeatable daily system for social content execution
-
----
-
-## Repository Structure
+## Repository Layout
 
 ```text
-.
-├── docs/
-│   ├── account-launch-playbook.md
-│   ├── next-24h-posting-plan.md
-│   └── x-profile-avatar.svg
+├── automation/
+│   ├── one_piece_x_platform_client.py
+│   └── one-piece-x-growth.automation.toml.example
 ├── lambdas/
-│   ├── common.py
-│   ├── x_account_summary.py
-│   ├── x_activity_list.py
+│   ├── dashboard.html
 │   ├── x_dashboard.py
-│   ├── x_oauth_callback.py
-│   ├── x_oauth_start.py
-│   ├── x_plan_generate.py
-│   ├── x_plan_list.py
-│   ├── x_plan_queue.py
-│   ├── x_plan_save.py
+│   ├── x_media_presign.py
 │   ├── x_publisher.py
-│   ├── x_queue_list.py
-│   ├── x_queue_publish.py
-│   ├── x_queue_remove.py
-│   └── x_queue_scheduler.py
-├── templates/
-│   └── template.yaml
-├── tests/
-│   └── test_x_platform.py
-├── env.template.json
-├── samconfig.toml
-└── README.md
+│   └── ...
+├── templates/template.yaml
+├── tests/test_x_platform.py
+└── samconfig.toml
 ```
 
----
+## Deploy To A New AWS Account
 
-## Core Workflows
+Prerequisites:
 
-### Connect an account
+- AWS CLI profile with deployment permissions.
+- AWS SAM CLI.
+- An approved X developer app with OAuth 2.0 enabled.
 
-`GET /oauth/x/start?account_id=account1`
-
-### Save a daily plan
-
-`POST /x/plan`
-
-### Queue a saved plan
-
-`POST /x/plan/queue`
-
-### Queue a manual draft
-
-`POST /x/post`
-
-### Publish a queued post immediately
-
-`POST /x/queue/publish`
-
-### Review queued posts
-
-`GET /x/queue?account_id=account1`
-
-### Review recent activity
-
-`GET /x/activity?account_id=account1`
-
-### Open the dashboard
-
-`GET /dashboard`
-
----
-
-## Deployment
+Initial deployment:
 
 ```bash
-cd "/Users/olawaleazeez/.codex/worktrees/02a7/New project/one-piece-x-platform"
 sam build -t templates/template.yaml
-sam deploy --config-file samconfig.toml --region eu-west-2
+sam deploy --guided --profile YOUR_AWS_PROFILE --region eu-west-2
 ```
 
----
+After the first deploy:
 
-## Current Scope
+1. Copy the `XApiBaseUrl` CloudFormation output.
+2. In the X developer portal, register `<XApiBaseUrl>/oauth/x/callback` as the callback URL.
+3. Store the X OAuth client secret in `<stack-name>/social/x/client-secret` in Secrets Manager.
+4. Deploy again with `OAuthCallbackBaseUrl` set to `XApiBaseUrl`.
+5. Connect both accounts using `/oauth/x/start?account_id=account1` and `/oauth/x/start?account_id=account2`.
 
-Current production scope:
+Never commit AWS credentials, X tokens, client secrets, or the automation API key.
 
-* X account connection
-* Two-account publishing workflow
-* Daily plan creation and queueing
-* Scheduled publishing windows
-* Manual publish controls
-* Activity history and failure visibility
+## Dashboard
 
-Planned future scope:
+Open:
 
-* Duplicate-content detection
-* Richer retry and rate-limit controls
-* Analytics dashboard
-* AI-assisted draft generation
-* Media upload support
-* Third-account expansion
+```text
+https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/dashboard
+```
 
----
+The dashboard shows account totals, saved plans, World Radar sources, queued posts, and activity. It accepts the automation API key only in browser memory for protected actions. The key is not stored in local storage or embedded in the page.
 
-## Why This Project Matters
+## Daily Growth Automation
 
-Social publishing workflows often remain manual, inconsistent, and difficult to monitor.
+The automation writes a dated Markdown plan and a JSON plan, then calls the bridge:
 
-This project shows how platform engineering ideas can be applied to content operations: structured workflows, secure integrations, scheduled execution, operational visibility, and a lightweight self-service interface for day-to-day publishing.
+```bash
+export ONE_PIECE_X_PLATFORM_BASE_URL="https://YOUR_API_ID.execute-api.eu-west-2.amazonaws.com"
+export ONE_PIECE_X_PLATFORM_API_KEY="$(aws secretsmanager get-secret-value \
+  --secret-id YOUR_STACK/automation/api-key \
+  --profile YOUR_AWS_PROFILE \
+  --region eu-west-2 \
+  --query SecretString --output text)"
 
----
+python3 automation/one_piece_x_platform_client.py --plan-file /absolute/path/to/daily-plan.json
+```
 
-## Author
+The plan JSON may include a top-level `world_radar` list. Each item requires:
 
-**Olawale Azeez**
+```json
+{
+  "title": "Official announcement title",
+  "category": "official_news",
+  "why_now": "Why this matters for today's conversation",
+  "source_url": "https://official-source.example",
+  "account_relevance": "account2"
+}
+```
 
-Cloud Engineer | Platform Engineer | AWS Certified Developer
+Use direct official sources where possible. Fan trends must be labelled as fan signals, not news. The automation should recommend a small number of thoughtful engagement opportunities but must not auto-reply or mass-engage.
 
-Focused on Platform Engineering, AWS, automation, operational systems, and workflow design.
+## Images
+
+In **Manual draft**, choose an original or licensed JPEG, PNG, or WebP image up to 5 MB. The browser uploads it directly through a five-minute signed URL to the private S3 bucket. At publish time, Lambda uploads the image to X and attaches the returned media ID to the post.
+
+Do not automatically download or repost anime episodes, film footage, trailers, or artwork without rights to use them.
+
+## Key Endpoints
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /dashboard` | Grand Line Control dashboard |
+| `GET /x/summary` | Account totals |
+| `GET /x/plans?account_id=account1` | Saved plans and World Radar |
+| `GET /x/queue?account_id=account1` | Queued posts |
+| `GET /x/activity?account_id=account1` | Published, failed, and removed posts |
+| `POST /x/plan` | Save a plan |
+| `POST /x/plan/queue` | Queue a plan |
+| `POST /x/post` | Queue or publish a manual post |
+| `POST /x/media/presign` | Create a private image upload URL |
+| `POST /x/queue/publish` | Publish an approved queued post |
+| `POST /x/queue/remove` | Remove a queued post |
+
+All write endpoints require an `X-Automation-Key` request header.
+
+## Cost Controls
+
+- DynamoDB uses on-demand billing and TTL: plans expire after 90 days; post history expires after 180 days.
+- Uploaded media expires after 30 days.
+- Scheduler runs only at the ten planned daily time slots.
+- Lambda uses 256 MB memory and a 30-second timeout.
+- Avoid provisioned concurrency, NAT Gateway, RDS, and always-on compute for this workload.
+
+## Verify
+
+```bash
+sam validate --template-file templates/template.yaml
+sam build -t templates/template.yaml
+python3 -m pytest -q
+```
+
+`pytest` is optional in environments where it is not installed.

@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from common import response
+from common import require_automation_key, response
 from x_publisher import _queue_post
 
 try:
@@ -38,6 +38,7 @@ def _scheduled_for_utc(plan_date: str, slot: str) -> str:
 
 def lambda_handler(event, _context):
     try:
+        require_automation_key(event)
         body = _parse_event_body(event)
         account_id = body.get("account_id", "").strip()
         plan_id = body.get("plan_id", "").strip()
@@ -105,5 +106,7 @@ def lambda_handler(event, _context):
                 "skipped": skipped,
             },
         )
+    except PermissionError as exc:
+        return response(401, {"provider": "x", "status": "unauthorized", "error": str(exc)})
     except Exception as exc:
         return response(502, {"provider": "x", "status": "plan_queue_failed", "error": str(exc)})

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 
-from common import response, utc_now
+from common import require_automation_key, response, utc_now
 
 try:
     import boto3
@@ -28,6 +28,7 @@ def _parse_event_body(event) -> dict:
 
 def lambda_handler(event, _context):
     try:
+        require_automation_key(event)
         body = _parse_event_body(event)
         account_id = body.get("account_id", "").strip()
         post_id = body.get("post_id", "").strip()
@@ -58,5 +59,7 @@ def lambda_handler(event, _context):
                 "status": "removed",
             },
         )
+    except PermissionError as exc:
+        return response(401, {"provider": "x", "status": "unauthorized", "error": str(exc)})
     except Exception as exc:
         return response(502, {"provider": "x", "status": "queue_remove_failed", "error": str(exc)})
