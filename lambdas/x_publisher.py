@@ -504,8 +504,13 @@ def lambda_handler(event, _context):
         account_id = body.get("account_id", "").strip()
         text = body.get("text", "").strip()
         reply_to = body.get("reply_to", "").strip()
-        queue_only = bool(body.get("queue_only"))
-        approved = bool(body.get("approved"))
+        # Never coerce untrusted JSON values such as "false" to True.
+        if "queue_only" in body and type(body["queue_only"]) is not bool:
+            return response(400, {"provider": "x", "error": "queue_only must be a JSON boolean"})
+        if "approved" in body and type(body["approved"]) is not bool:
+            return response(400, {"provider": "x", "error": "approved must be a JSON boolean"})
+        queue_only = body.get("queue_only") is True
+        approved = body.get("approved") is True
         scheduled_for = body.get("scheduled_for", "").strip()
         media_key = body.get("media_key", "").strip()
         media_type = body.get("media_type", "").strip()

@@ -142,6 +142,21 @@ Do not automatically download or repost anime episodes, film footage, trailers, 
 
 All write endpoints require an `X-Automation-Key` request header.
 
+### Explicit publishing approval
+
+`POST /x/post` accepts optional `queue_only` and `approved` flags, and
+`POST /x/queue/publish` accepts an optional `approved` flag. If supplied,
+these must be **JSON booleans** (`true` or `false`), not strings or numbers.
+Missing approval is treated as `false`; attempting to publish without explicit
+`approved: true` is rejected. Invalid flag types return HTTP 400 without
+calling the publishing operation. The scheduler only treats stored
+`auto_approved` as approved when its value is the Boolean `true` and the
+publish mode is `scheduled`.
+
+This is input validation, not a replacement for the required automation API key
+or for careful review of scheduled content. No live X publishing is performed
+by the regression tests.
+
 ## Cost Controls
 
 - DynamoDB uses on-demand billing and TTL: plans expire after 90 days; post history expires after 180 days.
