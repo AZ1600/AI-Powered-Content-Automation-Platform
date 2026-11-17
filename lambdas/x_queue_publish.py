@@ -21,7 +21,9 @@ def lambda_handler(event, _context):
         body = _parse_event_body(event)
         account_id = body.get("account_id", "").strip()
         post_id = body.get("post_id", "").strip()
-        approved = bool(body.get("approved"))
+        if "approved" in body and type(body["approved"]) is not bool:
+            return response(400, {"provider": "x", "error": "approved must be a JSON boolean"})
+        approved = body.get("approved") is True
 
         if not account_id:
             return response(400, {"provider": "x", "error": "Missing account_id"})

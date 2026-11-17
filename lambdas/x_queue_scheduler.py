@@ -11,7 +11,7 @@ ACCOUNT_IDS = {"account1", "account2"}
 
 
 def _is_scheduler_approved(item: dict) -> bool:
-    return bool(item.get("auto_approved")) and str(item.get("publish_mode", "")) == "scheduled"
+    return item.get("auto_approved") is True and item.get("publish_mode") == "scheduled"
 
 
 def _is_due(item: dict) -> bool:
